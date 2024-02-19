@@ -1,2 +1,0 @@
-ssid:Kevin's Room
-password:123
