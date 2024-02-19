@@ -27,10 +27,11 @@ void backward();
 
 // ############################ WiFi Setup ############################
 String ssid, password, username;
+const char* eap_anonymous_id = "anonymous@northwestern.edu";
 
 const int password_title_length = 9;
 const int ssid_title_length = 5;
-const int wpa2_username_title_length = 11;
+const int username_title_length = 9;
 
 // set web server port number to 80
 WiFiServer server(80);

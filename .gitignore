@@ -4,3 +4,5 @@
 .vscode/launch.json
 .vscode/ipch
 data/wifi_creds.txt
+data/wifi_creds_personal.txt
+data/wifi_creds_dev.txt

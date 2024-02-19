@@ -25,10 +25,9 @@ void setup()
   Serial.println("Reading HTML file from SPIFFS...");
   while (file_struct.file.available())
   {
-    String temp = file_struct.file.readStringUntil('\n');
-    Serial.println(temp);
-    html_code_str += temp;
+    html_code_str += file_struct.file.readStringUntil('\n');
   }
+  Serial.println("HTML file read from SPIFFS");
 
   // Connect to Wi-Fi
   connect_to_wifi();
@@ -105,23 +104,35 @@ void connect_to_wifi()
     {
       password = line.substring(password_title_length);
     }
-    else if (line.indexOf("wpa2_username") >= 0)
+    else if (line.indexOf("username") >= 0)
     {
-      username = line.substring(wpa2_username_title_length);
+      username = line.substring(username_title_length);
     }
   }
   // Connect to Wi-Fi network with SSID and password, see if it is WPA2
-  Serial.print("Connecting to ");
+  Serial.println("Connecting to WiFi with the following credentials:");
   Serial.println("SSID: " + ssid);
   Serial.println("Username: " + username);
+  Serial.println("");
+  Serial.println("MAC Address: ");
+  Serial.println(WiFi.macAddress());
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  WiFi.mode(WIFI_STA);
 
   if (username == "")
   {
+    Serial.println("Connecting to WiFi...");
     WiFi.begin(ssid, password);
   }
   else
   {
-    WiFi.begin(ssid, WPA2_AUTH_TLS, username, password);
+    Serial.println("Connecting to WPA2 Enterprise WiFi...");
+    esp_wifi_sta_wpa2_ent_set_identity((uint8_t*) eap_anonymous_id, strlen(eap_anonymous_id));
+    esp_wifi_sta_wpa2_ent_set_username((uint8_t*) username.c_str(), strlen(username.c_str()));
+    esp_wifi_sta_wpa2_ent_set_password((uint8_t*) password.c_str(), strlen(password.c_str()));
+    esp_wifi_sta_wpa2_ent_enable();
+    WiFi.begin(ssid);
   }
 
   Serial.print("Attempting to establish connection to WiFi");
