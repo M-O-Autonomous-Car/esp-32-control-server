@@ -1,0 +1,4 @@
+ssid:(enter ssid here without space before your entry)
+password:(enter password here without space before your entry)
+username:(enter ssid here without space before your entry, optional for non WPA2 enterprise WiFi connections)
+
