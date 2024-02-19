@@ -85,7 +85,7 @@ FileStruct read_custom_file(std::string file_path)
 void connect_to_wifi()
 {
   // Get the Wi-Fi credentials from the file
-  FileStruct file_struct = read_custom_file("/wifi_creds_dev.txt");
+  FileStruct file_struct = read_custom_file("/wifi_creds.txt");
 
   if (file_struct.status == 0)
   {
