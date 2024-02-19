@@ -12,4 +12,5 @@ To start the server a WiFi connection and its corresponding credentials are requ
 ![Basic Drive Controls UI](ui.png "Basic Driver Controls UI")
 
 # 3. UI Demo
-![](Showcase.mov "Basic Drive Controls UI Showcase")
+https://github.com/M-O-Autonomous-Car/esp-32-control-server/assets/82946664/4f0d7cbe-cb74-41ba-8160-4c03e13e8729
+
