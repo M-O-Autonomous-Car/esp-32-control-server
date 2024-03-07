@@ -14,3 +14,6 @@ To start the server a WiFi connection and its corresponding credentials are requ
 # 3. UI Demo
 https://github.com/M-O-Autonomous-Car/esp-32-control-server/assets/82946664/4f0d7cbe-cb74-41ba-8160-4c03e13e8729
 
+# 4. TODO
+Try device-northwestern instead of eduroam, seems to have issue with restricted permissions (E-mail Brendan)
+

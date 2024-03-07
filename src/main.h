@@ -4,18 +4,35 @@
 #include "esp_wpa2.h"
 #include "esp_wifi.h"
 #include "SPIFFS.h"
+#include <Wire.h>
+#include <Servo.h>
+
+// # TODO:
+// 1. Webserverl ibrary from arduino
+// 2. Webserver.h
+// 3. Elegant OTA does not work on Eduroam
 
 // ###################### Structs ######################
-typedef struct {
+typedef struct
+{
     File file;
     int status;
 } FileStruct;
 
 // ###################### Functions Declaration ######################
+void turn_high_gpio_pin(int pin);
+void turn_low_gpio_pin(int pin);
+
 FileStruct read_custom_file(std::string file_path);
+void read_html_file();
 void connect_to_wifi();
+void drive_pins_setup();
+void servo_turn(int angle);
+void execute_drive();
+
 boolean listening_for_client();
 void execute_request(WiFiClient client);
+bool WireWriteDataArray(uint8_t reg, int8_t *val, unsigned int len);
 void turn_on_led();
 void turn_off_led();
 void parse_drive_direction_request(String header);
@@ -27,13 +44,12 @@ void backward();
 
 // ############################ WiFi Setup ############################
 String ssid, password, username;
-const char* eap_anonymous_id = "anonymous@northwestern.edu";
-
+const char *eap_anonymous_id = "anonymous@northwestern.edu";
 const int password_title_length = 9;
 const int ssid_title_length = 5;
 const int username_title_length = 9;
 
-// set web server port number to 80
+// Set web server port number to 80
 WiFiServer server(80);
 
 // Variable to store the HTTP request
@@ -41,7 +57,7 @@ String header;
 
 // ############################ Variables ############################
 unsigned long currentTime = millis();
-unsigned long previousTime = 0; 
+unsigned long previousTime = 0;
 // Define timeout time in milliseconds (example: 2000ms = 2s)
 const long timeoutTime = 20000;
 
@@ -51,146 +67,31 @@ int server_empty_count = 0;
 
 // Auxiliar variables to store the current output state
 String output48State = "off";
-
-// Assign output variables to GPIO pins
 const int output48 = 48;
 
+// Car Variables
+#define MOTOR_FIXED_SPEED_ADDR    51 //
+#define MOTOR_I2C_ADDR 0x34
+#define I2C_SCL 20
+#define I2C_SDA 21
+#define SERVO_PIN 15
+
+int8_t car_forward[4]={16,0,-16,0};   // forward
+int8_t car_back[4]={-16,0,16,0};  // backward
+int8_t car_stop[4]={0,0,0,0};
+
 // Drive variables
-int drive_status = 0; // 0: Not in drive, 1: Forward, 2: Left, 3: Right, 4: Backward
+// TODO: change it so that two can be pressed at the same time, drive status for only forward, backward
+int drive_status = 0; // 0: Not in drive, 1: Forward, 2: Left
+int steer_status = 0; // 0: Not steering, 1: Left, 2: Right
 int drive_speed = 25;
-float turn_speed = 0.5; // will be replaced by the angle from the servo
+
+// Servo variables
+Servo myservo = Servo();
+const int max_angle = 135;
+const int min_angle = 45;
+const int turn_speed = 1; // Minimum is 1
+int curr_angle = 90;
 
 // HTML web page variable
 String html_code_str;
-const char* html_code = 
-"<!DOCTYPE html>\n"
-"<html lang=\"en\">\n"
-"<head>\n"
-"    <meta charset=\"UTF-8\">\n"
-"    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
-"    <title>RC Car Controller</title>\n"
-"    <style>\n"
-"        body, html {\n"
-"            margin: 0;\n"
-"            padding: 0;\n"
-"            width: 100%;\n"
-"            height: 100%;\n"
-"            display: flex;\n"
-"            justify-content: center;\n"
-"            align-items: center;\n"
-"        }\n"
-"        .container {\n"
-"            display: flex;\n"
-"            justify-content: center;\n"
-"            align-items: center;\n"
-"            flex-direction: column;\n"
-"            height: auto;\n"
-"        }\n"
-"        .controller {\n"
-"            display: flex;\n"
-"            flex-direction: column;\n"
-"            align-items: center;\n"
-"        }\n"
-"        .row {\n"
-"            display: flex;\n"
-"            justify-content: center;\n"
-"            margin: 15px;\n"
-"        }\n"
-"        .button {\n"
-"            width: 100px; /* Increased size */\n"
-"            height: 100px; /* Increased size */\n"
-"            margin: 10px;\n"
-"            font-size: 48px; /* Adjusted for larger button size */\n"
-"            cursor: pointer;\n"
-"            background-color: #007bff; /* Blue background */\n"
-"            color: #FFFFFF; /* White text */\n"
-"            border: none;\n"
-"            border-radius: 50%; /* Rounded corners */\n"
-"            box-shadow: 0 4px 8px rgba(0,0,0,0.2); /* Subtle shadow */\n"
-"            transition: background-color 0.3s, transform 0.3s ease, box-shadow 0.3s ease; /* Smooth transition for press effect and color change */\n"
-"            -webkit-tap-highlight-color: transparent; /* Remove highlight on tap */\n"
-"        }\n"
-"        .button:active {\n"
-"            background-color: #0056b3; /* Darker blue when pressed */\n"
-"            transform: scale(0.9); /* Press effect */\n"
-"            box-shadow: 0 2px 4px rgba(0,0,0,0.3); /* Deeper shadow when pressed */\n"
-"        }\n"
-"        #left.button {\n"
-"            margin-right: 30px; /* Increase space between left and right buttons */\n"
-"        }\n"
-"        #right.button {\n"
-"            margin-left: 30px; /* Increase space between left and right buttons */\n"
-"        }\n"
-"        .status_bar {\n"
-"            color: #003ba1; /* White text */\n"
-"            background-color: #d1e7ff; /* Blue background */\n"
-"            padding: 20px; /* Increased padding */\n"
-"            margin-bottom: 30px; /* Adjusted margin */\n"
-"            width: 100%; /* Increased width */\n"
-"            text-align: center;\n"
-"            border-radius: 5px;\n"
-"            font-size: 24px; /* Increased font size */\n"
-"            box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* Slight shadow for depth */\n"
-"        }\n"
-"    </style>\n"
-"</head>\n"
-"<body>\n"
-"<div class=\"container\">\n"
-"    <div class=\"controller\">\n"
-"        <div id=\"drive_status\" class=\"status_bar\">Not in Drive</div>\n"
-"        <div class=\"row\">\n"
-"            <button id=\"forward\" class=\"button\">↑</button>\n"
-"        </div>\n"
-"        <div class=\"row\">\n"
-"            <button id=\"left\" class=\"button\">←</button>\n"
-"            <button id=\"right\" class=\"button\">→</button>\n"
-"        </div>\n"
-"        <div class=\"row\">\n"
-"            <button id=\"backward\" class=\"button\">↓</button>\n"
-"        </div>\n"
-"    </div>\n"
-"</div>\n"
-"<script>\n"
-"    function handlePress(buttonId) {\n"
-"        fetch(`/press/${buttonId}`)\n"
-"        .then(response => {\n"
-"            if(response.ok) {\n"
-"               if (buttonId === 'forward') {\n"
-"                   document.getElementById('drive_status').innerHTML = 'Driving Forward';\n"
-"               } else if (buttonId === 'left') {\n"
-"                   document.getElementById('drive_status').innerHTML = 'Turning Left';\n"
-"               } else if (buttonId === 'right') {\n"
-"                   document.getElementById('drive_status').innerHTML = 'Turning Right';\n"
-"               } else if (buttonId === 'backward') {\n"
-"                    document.getElementById('drive_status').innerHTML = 'Driving Backward';\n"
-"               }"
-"                return response.json();\n"
-"            }\n"
-"            throw new Error('Request failed');\n"
-"        })\n"
-"        .then(data => console.log(`${buttonId} Pressed:`, data))\n"
-"        .catch((error) => console.error('Error:', error));\n"
-"    }\n"
-"\n"
-"    function handleRelease(buttonId) {\n"
-"        fetch(`/release/${buttonId}`)\n"
-"        .then(response => {\n"
-"            if(response.ok) {\n"
-"                document.getElementById('drive_status').innerHTML = `Not In Drive`;\n"
-"                return response.json();\n"
-"            }\n"
-"            throw new Error('Request failed');\n"
-"        })\n"
-"        .then(data => console.log(`${buttonId} Released:`, data))\n"
-"        .catch((error) => console.error('Error:', error));\n"
-"    }\n"
-"\n"
-"    const buttons = ['forward', 'left', 'right', 'backward'];\n"
-"    buttons.forEach(buttonId => {\n"
-"        const button = document.getElementById(buttonId);\n"
-"        button.addEventListener('mousedown', () => handlePress(buttonId));\n"
-"        button.addEventListener('mouseup', () => handleRelease(buttonId));\n"
-"    });\n"
-"</script>\n"
-"</body>\n"
-"</html>";

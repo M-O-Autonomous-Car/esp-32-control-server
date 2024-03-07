@@ -132,6 +132,11 @@
         button.addEventListener('mousedown', () => handlePress(buttonId));
         button.addEventListener('mouseup', () => handleRelease(buttonId));
     });
+
+    function disableContextMenu(event) {
+        event.preventDefault();
+    }
+    document.addEventListener('contextmenu', disableContextMenu);
 </script>
 </body>
 </html>
