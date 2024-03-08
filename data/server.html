@@ -73,11 +73,27 @@
             font-size: 24px; /* Increased font size */
             box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* Slight shadow for depth */
         }
+        /* Add this CSS to style the new button */
+        #updateBtn {
+            width: 60%;
+            padding: 10px 20px;
+            margin-bottom: 20px; /* Spacing between the button and the status bar */
+            font-size: 16px;
+            color: #e8e8e8;
+            background-color: #2f2f2f;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #updateBtn:hover {
+            background-color: #0056b3;
+        }
     </style>
 </head>
 <body>
 <div class="container">
     <div class="controller">
+        <button id="updateBtn" onclick="window.location.href='/update';">Update</button>
         <div id="drive_status" class="status_bar">Not in Drive</div>
         <div class="row">
             <button id="forward" class="button">↑</button>
@@ -92,51 +108,122 @@
     </div>
 </div>
 <script>
+    let gateway = `ws://${window.location.hostname}/ws`;
+    var websocket;
+    function initWebSocket() {
+        console.log('Trying to open a WebSocket connection...');
+        websocket = new WebSocket(gateway);
+        websocket.onopen    = onOpen;
+        websocket.onclose   = onClose;
+        websocket.onmessage = onMessage;
+    };
+
+    function onOpen(event) {
+        console.log('Connection opened');
+    };
+
+    function onClose(event) {
+        console.log('Connection closed');
+        setTimeout(initWebSocket, 2000);
+    };
+    
+    function onMessage(event) {
+        var data = event.data;
+        var drive_status = event.data[0];
+        var steer_status = event.data[1];
+        let state = document.getElementById('drive_status');
+        
+        console.log("Drive Status: ", drive_status, typeof drive_status);
+        console.log("Steer Status: ", steer_status, typeof steer_status);
+        if (drive_status == "1" && steer_status == "1") {
+            state.innerHTML = "Forward Left";
+        } else if (drive_status == "1" && steer_status == "2") {
+            state.innerHTML = "Forward Right";
+        } else if (drive_status == "2" && steer_status == "1") {
+            state.innerHTML = "Reversing Left";
+        } else if (drive_status == "2" && steer_status == "2") {
+            state.innerHTML = "Reversing Right";
+        } else if (drive_status == "1" && steer_status == "0") {
+            state.innerHTML = "Forward";
+        } else if (drive_status == "2" && steer_status == "0") {
+            state.innerHTML = "Reversing";
+        } else if (drive_status == "0" && steer_status == "1") {
+            state.innerHTML = "Left";
+        } else if (drive_status == "0" && steer_status == "2") {
+            state.innerHTML = "Right";
+        } else {
+            state.innerHTML = "Not in Drive";
+        }
+    };
+
+
     function handlePress(buttonId) {
-        fetch(`/press/${buttonId}`)
-        .then(response => {
-            if(response.ok) {
-               if (buttonId === 'forward') {
-                   document.getElementById('drive_status').innerHTML = 'Driving Forward';
-               } else if (buttonId === 'left') {
-                   document.getElementById('drive_status').innerHTML = 'Turning Left';
-               } else if (buttonId === 'right') {
-                   document.getElementById('drive_status').innerHTML = 'Turning Right';
-               } else if (buttonId === 'backward') {
-                    document.getElementById('drive_status').innerHTML = 'Driving Backward';
-               }
-                return response.json();
-            }
-            throw new Error('Request failed');
-        })
-        .then(data => console.log(`${buttonId} Pressed:`, data))
-        .catch((error) => console.error('Error:', error));
-    }
+        console.log("Pressed: ", buttonId);
+        if (buttonId === 'forward') {
+            websocket.send("forward");
+        } else if (buttonId === 'left') {
+            websocket.send("left");
+        } else if (buttonId === 'right') {
+            websocket.send("right");
+        } else if (buttonId === 'backward') {
+            websocket.send("backward");
+        }
+    };
 
     function handleRelease(buttonId) {
-        fetch(`/release/${buttonId}`)
-        .then(response => {
-            if(response.ok) {
-                document.getElementById('drive_status').innerHTML = 'Not In Drive';
-                return response.json();
-            }
-            throw new Error('Request failed');
-        })
-        .then(data => console.log(`${buttonId} Released:`, data))
-        .catch((error) => console.error('Error:', error));
-    }
+        console.log("Released: ", buttonId);
+        if (buttonId === 'forward') {
+            websocket.send("not forward");
+        } else if (buttonId === 'left') {
+            websocket.send("not left");
+        } else if (buttonId === 'right') {
+            websocket.send("not right");
+        } else if (buttonId === 'backward') {
+            websocket.send("not backward");
+        }
+    };
 
-    const buttons = ['forward', 'left', 'right', 'backward'];
-    buttons.forEach(buttonId => {
-        const button = document.getElementById(buttonId);
-        button.addEventListener('mousedown', () => handlePress(buttonId));
-        button.addEventListener('mouseup', () => handleRelease(buttonId));
-    });
+    function clickEvent() {
+        if ('ontouchstart' in document.documentElement === true) {
+            console.log("Mobile: Touchstart");
+            return 'touchstart'
+        } else {
+            console.log("Desktop: Mousedown");
+            return 'mousedown'
+        }
+    };
+
+    function releaseEvent() {
+        if ('ontouchend' in document.documentElement === true) {
+            console.log("Mobile: Touchend");
+            return 'touchend'
+        } else {
+            console.log("Desktop: Mouseup");
+            return 'mouseup'
+        }
+    };
+
+    function initButton() {
+        const buttons = ['forward', 'left', 'right', 'backward'];
+        buttons.forEach(buttonId => {
+            const button = document.getElementById(buttonId);
+            button.addEventListener(clickEvent(), () => handlePress(buttonId));
+            button.addEventListener(releaseEvent(), () => handleRelease(buttonId));
+        });
+    };
 
     function disableContextMenu(event) {
         event.preventDefault();
-    }
+    };
+    
+    window.addEventListener('load', onLoad);
+    function onLoad(event) {
+        initWebSocket();
+        initButton();
+        console.log("Loaded...");
+    };
     document.addEventListener('contextmenu', disableContextMenu);
+
 </script>
 </body>
 </html>

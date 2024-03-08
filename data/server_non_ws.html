@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RC Car Controller</title>
+    <style>
+        * {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: auto;
+        }
+        .controller {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .row {
+            display: flex;
+            justify-content: center;
+            margin: 15px;
+        }
+        .button {
+            width: 100px; /* Increased size */
+            height: 100px; /* Increased size */
+            margin: 10px;
+            font-size: 48px; /* Adjusted for larger button size */
+            cursor: pointer;
+            background-color: #007bff; /* Blue background */
+            color: #FFFFFF; /* White text */
+            border: none;
+            border-radius: 50%; /* Rounded corners */
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2); /* Subtle shadow */
+            transition: background-color 0.3s, transform 0.3s ease, box-shadow 0.3s ease; /* Smooth transition for press effect and color change */
+            -webkit-tap-highlight-color: transparent; /* Remove highlight on tap */
+        }
+        .button:active {
+            background-color: #0056b3; /* Darker blue when pressed */
+            transform: scale(0.9); /* Press effect */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3); /* Deeper shadow when pressed */
+        }
+        #left.button {
+            margin-right: 30px; /* Increase space between left and right buttons */
+        }
+        #right.button {
+            margin-left: 30px; /* Increase space between left and right buttons */
+        }
+        .status_bar {
+            color: #003ba1; /* White text */
+            background-color: #d1e7ff; /* Blue background */
+            padding: 20px; /* Increased padding */
+            margin-bottom: 30px; /* Adjusted margin */
+            width: 100%; /* Increased width */
+            text-align: center;
+            border-radius: 5px;
+            font-size: 24px; /* Increased font size */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* Slight shadow for depth */
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="controller">
+        <div id="drive_status" class="status_bar">Not in Drive</div>
+        <div class="row">
+            <button id="forward" class="button">↑</button>
+        </div>
+        <div class="row">
+            <button id="left" class="button">←</button>
+            <button id="right" class="button">→</button>
+        </div>
+        <div class="row">
+            <button id="backward" class="button">↓</button>
+        </div>
+    </div>
+</div>
+<script>
+    function handlePress(buttonId) {
+        fetch(`/press/${buttonId}`)
+        .then(response => {
+            if(response.ok) {
+               if (buttonId === 'forward') {
+                   document.getElementById('drive_status').innerHTML = 'Driving Forward';
+               } else if (buttonId === 'left') {
+                   document.getElementById('drive_status').innerHTML = 'Turning Left';
+               } else if (buttonId === 'right') {
+                   document.getElementById('drive_status').innerHTML = 'Turning Right';
+               } else if (buttonId === 'backward') {
+                    document.getElementById('drive_status').innerHTML = 'Driving Backward';
+               }
+                return response.json();
+            }
+            throw new Error('Request failed');
+        })
+        .then(data => console.log(`${buttonId} Pressed:`, data))
+        .catch((error) => console.error('Error:', error));
+    }
+
+    function handleRelease(buttonId) {
+        fetch(`/release/${buttonId}`)
+        .then(response => {
+            if(response.ok) {
+                document.getElementById('drive_status').innerHTML = 'Not In Drive';
+                return response.json();
+            }
+            throw new Error('Request failed');
+        })
+        .then(data => console.log(`${buttonId} Released:`, data))
+        .catch((error) => console.error('Error:', error));
+    }
+
+    const buttons = ['forward', 'left', 'right', 'backward'];
+    buttons.forEach(buttonId => {
+        const button = document.getElementById(buttonId);
+        button.addEventListener('mousedown', () => handlePress(buttonId));
+        button.addEventListener('mouseup', () => handleRelease(buttonId));
+    });
+
+    function disableContextMenu(event) {
+        event.preventDefault();
+    }
+    document.addEventListener('contextmenu', disableContextMenu);
+</script>
+</body>
+</html>

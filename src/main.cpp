@@ -12,35 +12,25 @@ void setup()
   digitalWrite(output48, LOW);
 
   // Setups
+  Serial.println("############## Setup start ##############");
   Wire.begin(I2C_SDA, I2C_SCL);
   WiFi.disconnect(true);
-  servo_turn(curr_angle); // Turn back to straight
-
   read_html_file();
   connect_to_wifi();
+  Serial.println("############## Setup complete ##############");
+
+  // Websocket Begin
+  Serial.println("############## Websocket begin ##############");
+  init_websocket();
+  init_web_socket_routing();
+  Serial.println("############## Websocket complete ##############");
 }
 
 // ############################ Loop ############################
 void loop()
 {
-  // Listen for incoming clients
-  // 1. Each HTTP request will be handled as a fresh client connect, thus why the server will keep listening for new clients
-  // 2. The client connection is not persistent
-  if (!listening_for_client())
-  {
-    server_empty_count++;
-  } else {
-    server_empty_count = 0;
-  }
-
-  // // Restart the server and reconnect to WiFi if it has been empty for a while
-  // if (server_empty_count >= server_restart_limit)
-  // {
-  //   Serial.println("Server has been empty for a while. Restarting server and reconnecting to WiFi...");
-  //   server_empty_count = 0;
-  //   connect_to_wifi();
-  // }
-
+  // Execute the WebSocket request
+  ws.cleanupClients();
   // Execute Drive
   execute_drive();
 
@@ -94,7 +84,6 @@ void connect_to_wifi()
 {
   // Get the Wi-Fi credentials from the file
   FileStruct file_struct = read_custom_file("/wifi_creds.txt");
-
   if (file_struct.status == 0)
   {
     Serial.println("Failed to read Wi-Fi credentials from file");
@@ -130,26 +119,37 @@ void connect_to_wifi()
   WiFi.macAddress(mac);
   WiFi.mode(WIFI_STA);
 
-  if (username == "")
-  {
-    Serial.println("Connecting to WiFi...");
-    WiFi.begin(ssid, password);
-  }
-  else
-  {
-    Serial.println("Connecting to WPA2 Enterprise WiFi...");
-    esp_wifi_sta_wpa2_ent_set_identity((uint8_t*) eap_anonymous_id, strlen(eap_anonymous_id));
-    esp_wifi_sta_wpa2_ent_set_username((uint8_t*) username.c_str(), strlen(username.c_str()));
-    esp_wifi_sta_wpa2_ent_set_password((uint8_t*) password.c_str(), strlen(password.c_str()));
-    esp_wifi_sta_wpa2_ent_enable();
-    WiFi.begin(ssid);
-  }
+  // Starting the WiFi, indicate with servo turn
+  servo_turn(MIN_ANGLE);
 
-  Serial.print("Attempting to establish connection to WiFi");
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(1000);
-    Serial.print(".");
+  // Retry until wifi reconencts
+  while (WiFi.status() != WL_CONNECTED) {
+    int wifi_count = 0;
+    if (username == "")
+    {
+      Serial.println("Connecting to WiFi...");
+      WiFi.begin(ssid, password);
+    }
+    else
+    {
+      Serial.println("Connecting to WPA2 Enterprise WiFi...");
+      esp_wifi_sta_wpa2_ent_set_identity((uint8_t*) eap_anonymous_id, strlen(eap_anonymous_id));
+      esp_wifi_sta_wpa2_ent_set_username((uint8_t*) username.c_str(), strlen(username.c_str()));
+      esp_wifi_sta_wpa2_ent_set_password((uint8_t*) password.c_str(), strlen(password.c_str()));
+      esp_wifi_sta_wpa2_ent_enable();
+      WiFi.begin(ssid);
+    }
+
+    Serial.print("Attempting to establish connection to WiFi");
+    
+    // Retry until wifi reconencts
+    while (WiFi.status() != WL_CONNECTED && wifi_count < WIFI_RECONNECT_LIMIT) {
+      delay(1000);
+      Serial.print(".");
+      wifi_count++;
+    }
+    Serial.println("");
+    Serial.println("Reconnecting to WiFi...");
   }
 
   // Print IP address and start web server once connected to WiFi
@@ -159,7 +159,17 @@ void connect_to_wifi()
   Serial.println(WiFi.localIP());
   Serial.print("RRSI: ");
   Serial.println(WiFi.RSSI());
-  server.begin();
+
+  // Server is ready, turn servo left, right, straight
+  servo_turn(DEF_ANGLE);
+}
+
+// Initialize the WebSocket
+void init_websocket() {
+  server.begin(); // begin web server
+  AsyncElegantOTA.begin(&server); // begin OTA server
+  ws.onEvent(onEvent);
+  server.addHandler(&ws);
 }
 
 // Turn the servo
@@ -209,26 +219,26 @@ void execute_drive()
   // Steer the car based on the steer status
   if (steer_status == 1)
   {
-    Serial.print("Turning right angle:");
-    Serial.println(curr_angle);
-    if (curr_angle < max_angle) {
-      curr_angle += turn_speed;
-      servo_turn(curr_angle);
-      delay(10);
-    }
-  }
-  else if (drive_status == 2)
-  {
     Serial.print("Turning left angle: ");
     Serial.println(curr_angle);
-    if (curr_angle > min_angle) {
+    if (curr_angle > MIN_ANGLE) {
       curr_angle -= turn_speed;
       servo_turn(curr_angle);
       delay(10);
     }
   }
+  else if (steer_status == 2)
+  {
+    Serial.print("Turning right angle:");
+    Serial.println(curr_angle);
+    if (curr_angle < MAX_ANGLE) {
+      curr_angle += turn_speed;
+      servo_turn(curr_angle);
+      delay(10);
+    }
+  }
   else {
-    Serial.println("No Steer input");
+    // Serial.println("No Steer input");
   }
 }
 
@@ -241,132 +251,65 @@ void drive_pins_setup()
   pinMode(output48, OUTPUT); // LED
 }
 
-// Listen for incoming clients
-boolean listening_for_client()
-{
-  // Check if a client has connected
-  // Serial.print("Waiting for new client/request...");
-  WiFiClient client = server.available();
-  if (client)
-  {
+// Notify the clients
+void notifyClients() {
+  Serial.println("Drive Status: ");
+  Serial.println(drive_status);
+  Serial.println("Steer Status: ");
+  Serial.println(steer_status);
+
+  ws.textAll(String(drive_status) + String(steer_status));
+}
+
+// Handle the WebSocket message
+void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
+  AwsFrameInfo *info = (AwsFrameInfo*)arg;
+  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+    data[len] = 0;
+    Serial.println("Received WS message: ");
+    Serial.println((char*)data);
     Serial.println("");
-    Serial.println("Client connected...");
-    execute_request(client);
-    return true;
-  }
-  else
-  {
-    return false;
-  }
-}
-
-// Execute the HTTP request
-void execute_request(WiFiClient client)
-{
-  currentTime = millis();
-  previousTime = currentTime;
-  String currentLine = ""; // make a String to hold incoming data from the client
-
-  while (client.connected() && currentTime - previousTime <= timeoutTime)
-  { // loop while the client's connected
-    currentTime = millis();
-    if (client.available())
-    {                         // if there's bytes to read from the client,
-      char c = client.read(); // read a byte, then
-      Serial.write(c);        // print it out the serial monitor
-      header += c;
-      if (c == '\n')
-      { // if the byte is a newline character
-        // if the current line is blank, you got two newline characters in a row.
-        // that's the end of the client HTTP request, so send a response:
-        if (currentLine.length() == 0)
-        {
-          // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
-          // and a content-type so the client knows what's coming, then a blank line:
-          client.println("HTTP/1.1 200 OK");
-          client.println("Content-type:text/html");
-          client.println("Connection: close");
-          client.println();
-
-          // Parse the HTML header data
-          parse_drive_direction_request(header);
-
-          // Display the HTML web page
-          client.println(F(html_code_str.c_str()));
-
-          // The HTTP response ends with another blank line
-          client.println();
-          // Break out of the while loop
-          break;
-        }
-        else
-        { // if you got a newline, then clear currentLine
-          currentLine = "";
-        }
-      }
-      else if (c != '\r')
-      {                   // if you got anything else but a carriage return character,
-        currentLine += c; // add it to the end of the currentLine
-      }
+    if (strcmp((char*)data, "left") == 0) {
+      left();
+    } else if (strcmp((char*)data, "right") == 0) {
+      right();
+    } else if (strcmp((char*)data, "forward") == 0) {
+      forward();
+    } else if (strcmp((char*)data, "backward") == 0) {
+      backward();
+    } else if (strcmp((char*)data, "not left") == 0 || strcmp((char*)data, "not right") == 0){
+      steer_status = 0;
+    } else if (strcmp((char*)data, "not forward") == 0 || strcmp((char*)data, "not backward") == 0){
+      drive_status = 0;
     }
+    notifyClients(); // Notify the clients
   }
-  // Clear the header variable
-  header = "";
-  // Close the connection after each response
-  client.stop();
-  Serial.println("Response sent to client");
-  Serial.println("");
 }
 
-// Parse the header for drive direction request
-// If the GET request is of the format "GET /press/{some direction}", turn on the GPIO pin and change drive status
-// If the get request is of the format "GET /release/{some direction}", turn off the GPIO pin and change drive status
-void parse_drive_direction_request(String header)
-{
-  if (header.indexOf("GET /press/left") >= 0)
-  {
-    left();
+// Handle the WebSocket event
+void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
+             void *arg, uint8_t *data, size_t len) {
+  switch (type) {
+    case WS_EVT_CONNECT:
+      Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+      break;
+    case WS_EVT_DISCONNECT:
+      Serial.printf("WebSocket client #%u disconnected\n", client->id());
+      break;
+    case WS_EVT_DATA:
+      handleWebSocketMessage(arg, data, len);
+      break;
+    case WS_EVT_PONG:
+    case WS_EVT_ERROR:
+      break;
   }
-  else if (header.indexOf("GET /press/right") >= 0)
-  {
-    right();
-  }
-  else if (header.indexOf("GET /press/forward") >= 0)
-  {
-    forward();
-  }
-  else if (header.indexOf("GET /press/backward") >= 0)
-  {
-    backward();
-  }
-  else if (header.indexOf("GET /release/left") >= 0)
-  {
-    Serial.println("Releasing left");
-    steer_status = 0;
-    turn_off_led();
-  }
-  else if (header.indexOf("GET /release/right") >= 0)
-  {
-    Serial.println("Releasing right");
-    steer_status = 0;
-    turn_off_led();
-  }
-  else if (header.indexOf("GET /release/forward") >= 0)
-  {
-    Serial.println("Releasing forward");
-    drive_status = 0;
-    turn_off_led();
-  }
-  else if (header.indexOf("GET /release/backward") >= 0)
-  {
-    Serial.println("Releasing backward");
-    drive_status = 0;
-    turn_off_led();
-  }
-  else
-  {
-    Serial.println("Invalid request");
-  }
+}
+
+// Websocket routing handler
+void init_web_socket_routing() {
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", html_code_str.c_str());
+  });
 }
 
 // ###################### Drive Controls Functions ######################
@@ -398,6 +341,19 @@ void right()
   turn_on_led();
 }
 
+void stop_drive()
+{
+  Serial.println("Stopping drive");
+  drive_status = 0;
+  turn_off_led();
+}
+
+void stop_steer()
+{
+  Serial.println("Stopping steer");
+  steer_status = 0;
+  turn_off_led();
+}
 
 // ###################### GPIO Functions ######################
 // Turn on the GPIO pin
