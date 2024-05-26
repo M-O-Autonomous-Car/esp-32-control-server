@@ -96,6 +96,9 @@
         <button id="updateBtn" onclick="window.location.href='/update';">Update</button>
         <div id="drive_status" class="status_bar">Not in Drive</div>
         <div class="row">
+            <button id="recenter" class="button">.</button>
+        </div>
+        <div class="row">
             <button id="forward" class="button">↑</button>
         </div>
         <div class="row">
@@ -167,6 +170,8 @@
             websocket.send("right");
         } else if (buttonId === 'backward') {
             websocket.send("backward");
+        } else if (buttonId === 'recenter') {
+            websocket.send("recenter");
         }
     };
 
@@ -180,6 +185,8 @@
             websocket.send("not right");
         } else if (buttonId === 'backward') {
             websocket.send("not backward");
+        } else if (buttonId === 'recenter') {
+            websocket.send("recenter");
         }
     };
 
@@ -204,7 +211,7 @@
     };
 
     function initButton() {
-        const buttons = ['forward', 'left', 'right', 'backward'];
+        const buttons = ['forward', 'left', 'right', 'backward', 'recenter'];
         buttons.forEach(buttonId => {
             const button = document.getElementById(buttonId);
             button.addEventListener(clickEvent(), () => handlePress(buttonId));
